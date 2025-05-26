@@ -12,7 +12,7 @@ from flask import Flask, request, jsonify
 # ——————————————— 全局配置 ———————————————
 BERT_PATH   = "chinese_roberta_wwm_ext_pytorch/"
 SCHEMA_PATH = "CMeIE/schema.json"
-WEIGHT_PATH = "CMeIE/bad.pth"  # 或者 roberta_best.pth
+WEIGHT_PATH = "CMeIE/roberta_best.pth"  # 或者 roberta_best.pth
 MAXLEN      = 256
 DEVICE      = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

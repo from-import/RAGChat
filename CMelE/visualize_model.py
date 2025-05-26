@@ -15,8 +15,8 @@ def load_model(model_path: str):
     model.eval()
     return model
 
-def extract_all_spoes(model, texts, threshold=0.2):
-    from code import extract_spoes  # reuse你训练脚本里的抽取函数
+def extract_all_spoes(model, texts, threshold=0.02):
+    from code import extract_spoes  # reuse训练脚本里的抽取函数
     all_spoes = []
     for text in texts:
         spoes = extract_spoes(text, model, DEVICE, threshold)
@@ -53,7 +53,7 @@ def visualize_graph(G, output_html="kg.html"):
     webbrowser.open(output_html, new=2)
 def main():
     # 1. 加载模型
-    model = load_model("CMeIE/bad.pth")
+    model = load_model("CMeIE/roberta_best.pth")
 
     # 2. 准备待抽取文本，可替换为任意文本列表
     #    这里我们加载验证集中的文本

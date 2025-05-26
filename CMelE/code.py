@@ -183,7 +183,7 @@ train_loader = DataLoader(
     TorchDataset(train_records),
     batch_size=8,
     shuffle=True,
-    num_workers=4,
+    num_workers=2,
     pin_memory=True,
     drop_last=True
 )
@@ -396,7 +396,7 @@ def evaluate(data, model, device):
 # ——————————————— 训练循环 ———————————————
 
 def train(model, train_loader, valid_data, epochs, device):
-    best_f1 = 0.5428
+    best_f1 = 0.2
     for epoch in range(1, epochs+1):
         model.train()
         epoch_loss = 0.0
@@ -437,7 +437,7 @@ def train(model, train_loader, valid_data, epochs, device):
             print("  Saved new bad model.")
 
 if __name__ == "__main__":
-    train(net, train_loader, valid_data, epochs=6, device=DEVICE)
+    train(net, train_loader, valid_data, epochs=10, device=DEVICE)
 
     # 预测测试集并写入文件
     def combine_spoes(spoes):
