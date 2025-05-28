@@ -1,48 +1,51 @@
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle, FancyArrowPatch
+from matplotlib.patches import Rectangle
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
-fig, ax = plt.subplots(figsize=(12, 8))
-ax.set_xlim(0, 10)
-ax.set_ylim(0, 10)
-ax.axis('off')  # 不显示坐标轴
+fig, ax = plt.subplots(figsize=(10, 8))
+ax.axis('off')
 
-# 定义模块位置
-modules = {
-    "前端页面": (1, 5),
-    "后端服务（Spring Boot）": (4, 5),
-    "Redis 缓存": (7.2, 7.5),
-    "MySQL 数据库": (7.2, 5),
-    "RabbitMQ 队列": (7.2, 2.5),
-    "WebSocket 通道": (4, 2),
-    "Ollama 模型服务": (9, 0.5)
-}
+# 前端模块
+ax.add_patch(Rectangle((0.05, 0.55), 0.2, 0.2, edgecolor='black', facecolor='#CCE5FF'))
+ax.text(0.15, 0.65, '前端\n(Browser)', ha='center', va='center', fontsize=12)
 
-# 绘制模块
-for name, (x, y) in modules.items():
-    ax.add_patch(Rectangle((x-0.8, y-0.5), 2, 1, edgecolor='black', facecolor='#d0e9f2'))
-    ax.text(x + 0.2, y, name, fontsize=10, verticalalignment='center')
+# 后端模块框
+ax.add_patch(Rectangle((0.3, 0.1), 0.4, 0.7, edgecolor='black', facecolor='#E6F2FF'))
+ax.text(0.5, 0.76, '后端 (Spring Boot)', ha='center', va='center', fontsize=14)
 
-# 绘制箭头函数
-def draw_arrow(x1, y1, x2, y2):
-    arrow = FancyArrowPatch((x1, y1), (x2, y2),
-                            arrowstyle='->',
-                            mutation_scale=15,
-                            color='gray')
-    ax.add_patch(arrow)
+# 后端子模块
+submodules = [
+    ('用户认证与会话管理', 0.65),
+    ('对话记录管理', 0.55),
+    ('消息处理与生成', 0.45),
+    ('缓存优化模块', 0.35),
+    ('异步消息队列模块', 0.25)
+]
+for name, y in submodules:
+    ax.add_patch(Rectangle((0.33, y), 0.34, 0.08, edgecolor='gray', facecolor='white'))
+    ax.text(0.5, y + 0.04, name, ha='center', va='center', fontsize=11)
 
-# 数据流连接关系
-draw_arrow(2.2, 5, 3.2, 5)  # 前端 -> 后端
-draw_arrow(5.2, 5, 6.4, 7.5)  # 后端 -> Redis
-draw_arrow(5.2, 5, 6.4, 5)  # 后端 -> MySQL
-draw_arrow(5.2, 5, 6.4, 2.5)  # 后端 -> RabbitMQ
-draw_arrow(6.6, 2.5, 8.8, 0.5)  # RabbitMQ -> 模型服务
-draw_arrow(4, 5, 4, 3)  # 后端 -> WebSocket
-draw_arrow(4, 2.5, 2.2, 5)  # WebSocket -> 前端（响应）
+# 外部服务模块
+externals = [
+    ('WebSocket', 0.65),
+    ('RabbitMQ', 0.55),
+    ('Redis', 0.45),
+    ('MySQL', 0.35)
+]
+for idx, (name, y) in enumerate(externals):
+    ax.add_patch(Rectangle((0.75, y), 0.18, 0.08, edgecolor='black', facecolor='#FFE5CC'))
+    ax.text(0.75 + 0.09, y + 0.04, name, ha='center', va='center', fontsize=11)
+    ax.annotate('', xy=(0.75, y + 0.04), xytext=(0.67, y + 0.04),
+                arrowprops=dict(arrowstyle='->', lw=1.8))
 
-plt.title("系统整体架构图", fontsize=14)
+# 前端 -> 后端
+ax.annotate('', xy=(0.3, 0.65), xytext=(0.25, 0.65),
+            arrowprops=dict(arrowstyle='->', lw=1.8))
+
+# 标题
+plt.text(0.5, 0.85, '图 3-1 系统整体架构概述', fontsize=16, ha='center')
 plt.tight_layout()
 plt.show()
