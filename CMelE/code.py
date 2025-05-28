@@ -9,17 +9,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from pytorch_pretrained_bert import BertModel, BertTokenizer
 from torch.utils.data import DataLoader, Dataset
-from tqdm import tqdm
 from torch.cuda.amp import autocast, GradScaler
 from tqdm import tqdm
 
 # ——————————————— 全局设置 ———————————————
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-torch.backends.cudnn.benchmark = True  # cuDNN 自动寻找最优算法
+torch.backends.cudnn.benchmark = True  # cuDNN 会自动寻找最优的卷积算法，加速训练。
 
 BERT_PATH = "chinese_roberta_wwm_ext_pytorch/"
-MAXLEN = 256
+MAXLEN = 256  # MAXLEN：每条文本最大截断（或填充）长度，防止过长。
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 train_l = []
 val_f1_r = []
@@ -33,12 +33,19 @@ def record():
             f2.write(f"{e}\t{loss:.6f}\n")
 
 # ——————————————— 数据加载 & 预处理 ———————————————
+"""
+文件格式：每一行都是一个 JSON 对象，包含 "text"（一段文字）和 "spo_list"（其中的关系三元组）。
 
+输出格式：列表 D，每个元素是一个字典，有:
+    text：原文
+    spo_list：一个三元组列表，例：[("糖尿病","治疗方法","注射胰岛素"), ...]
+"""
 def load_data(filename):
     D = []
     with open(filename, encoding='utf-8') as f:
         for l in tqdm(f, desc=f"Loading {filename}"):
             obj = json.loads(l)
+            # 将每个 SPO 三元组拆开，存成 (subject, predicate, object) 的形式
             d = {'text': obj['text'], 'spo_list': []}
             for spo in obj['spo_list']:
                 for _, v in spo['object'].items():
@@ -46,10 +53,13 @@ def load_data(filename):
             D.append(d)
     return D
 
+
 train_data = load_data('CMeIE/CMeIE_train.json')
 valid_data = load_data('CMeIE/CMeIE_dev.json')
 
 # 过滤过长实例
+# BERT 的输入长度有限，如果三元组的 subject 或 object 在 token 化后超出 MAXLEN-2
+# 就丢掉这条样本，保证所有样本都能跑完整个模型。
 train_data_new = []
 for d in tqdm(train_data, desc="Filtering train samples"):
     ok = True
@@ -80,6 +90,8 @@ with open('CMeIE/schema.json', encoding='utf-8') as f:
 # 自定义 tokenizer：保证中文字符级别切分
 class OurTokenizer(BertTokenizer):
     def tokenize(self, text):
+        # 按字（Character）级别切分，保证每个中文字符都能对上 BERT 的词表
+        # 把一句话切成一个个“字”，然后再去查词表，这样就不会把生僻词给忽略掉。
         R = []
         for c in text:
             if c in self.vocab:
@@ -101,6 +113,11 @@ def preprocess_dataset(data):
     """预计算 token_ids, seg_ids, sub_ids, sub_labels, obj_labels"""
     records = []
     for d in tqdm(data, desc="Preprocessing"):
+        # 1) 在文本两端加上 [CLS] 和 [SEP]
+        # 2) 找到每个 subject 和 object 在 token_ids 中的起止位置
+        # 3) 构造 sub_labels（标记所有 subject 的起止）和 obj_labels（标记给定 subject 后对应 object 的起止）
+        # 4) 随机选一个 subject 作为训练目标
+        # 5) 对 token_ids、seg_ids、sub_labels、obj_labels 做截断或填充到 MAXLEN
         text = d['text']
         tokens = ["[CLS]"] + tokenizer.tokenize(text) + ["[SEP]"]
         token_ids = tokenizer.convert_tokens_to_ids(tokens)
@@ -155,6 +172,21 @@ def preprocess_dataset(data):
                         sub_labels, obj_labels))
     return records
 
+
+"""
+records：一个列表，里面每个元素都是一个五元组，分别对应：
+
+    token_ids：输入到 BERT 的 ID 序列
+
+    seg_ids：BERT 用的句子分割 ID（这里全 0）
+
+    sub_ids：本次训练要预测的那一对 subject 的起止位置
+
+    sub_labels：一个矩阵，用来监督模型找到所有 subject 起止
+
+    obj_labels：一个四维张量，用来监督模型在给定 subject 后，找到对应 predicate-object 的起止
+"""
+
 # 辅助：在 list 中搜索子序列
 def search(pattern, sequence):
     n = len(pattern)
@@ -187,6 +219,11 @@ train_loader = DataLoader(
     pin_memory=True,
     drop_last=True
 )
+"""
+Dataset：封装上一步的 records，实现 __len__ 和 __getitem__。
+DataLoader：每次取出一个 batch（这里是 8 条样本），并行加载、随机打乱、自动拼成一个大张量。
+"""
+
 valid_loader = DataLoader(
     TorchDataset(valid_records),
     batch_size=25,
@@ -211,6 +248,8 @@ class BertLayerNorm(nn.Module):
 
 class REModel(nn.Module):
     def __init__(self):
+        # 1) 加载预训练 BERT
+        # 2) 定义一个 Linear+Embedding+LayerNorm+ReLU 等层，用来把 subject 信息融入后再去预测 object
         super().__init__()
         self.bert = BertModel.from_pretrained(BERT_PATH)
         for p in self.bert.parameters():
@@ -223,6 +262,12 @@ class REModel(nn.Module):
         self.obj_output   = nn.Linear(768, len(predicate2id)*2)
 
     def forward(self, token_ids, seg_ids, sub_ids=None):
+        # 1) 先跑 BERT，得到每个位置的上下文表示 out
+        # 2) sub_output：直接对 out 做线性变换，得到每个位置是不是 subject 开始/结束的 logits_sub
+        # 3) 如果没有给 sub_ids（预测时就不传），就提前返回只算 subject
+        # 4) 给了 sub_ids（训练/抽取 object 阶段），再把 subject 的位置信息拼进去，做 layernorm、dropout、ReLU
+        # 5) obj_output：再做一次线性变换，输出每个位置、每个 predicate、是否为 object 起止的 logits_obj
+
         # 1) 先跑 BERT
         out, _ = self.bert(token_ids, token_type_ids=seg_ids,
                            output_all_encoded_layers=False)
@@ -276,8 +321,12 @@ optimizer = torch.optim.Adam(net.parameters(), lr=1e-5)
 scaler = GradScaler()
 
 # ——————————————— 损失计算 ———————————————
+# 损失函数与优化器
 
 def compute_loss(logits_sub, logits_obj, sub_labels, obj_labels, token_ids):
+    # 1) 用 BCEWithLogitsLoss（对二分类做交叉熵）算 subject 的损失
+    # 2) 同样算 object 的损失
+    # 3) 对 token_ids>0（真正的词，不是填充）位置做掩码，最后加起来归一化
     mask = (token_ids > 0).float()  # [B, L]
 
     # subject loss
@@ -404,6 +453,11 @@ def train(model, train_loader, valid_data, epochs, device):
         # 用 tqdm 包装 DataLoader
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}", dynamic_ncols=True)
         for batch_idx, batch in enumerate(pbar, start=1):
+            # 1) 清零梯度
+            # 2) 前向、算损失、反向、梯度更新
+            # 3) 记录平均损失
+            # 4) 切到 eval 模式，用 evaluate() 在验证集上算 F1
+            # 5) 如果 F1 更好，就保存为最佳模型，否则保存为“坏”模型
             token_ids, seg_ids, sub_ids, sub_lab, obj_lab = [x.to(device) for x in batch]
             optimizer.zero_grad()
             with autocast():
@@ -417,6 +471,7 @@ def train(model, train_loader, valid_data, epochs, device):
             avg_loss = epoch_loss / batch_idx
             elapsed = time.time() - t0
             # 每个 batch 结束后更新进度条上的信息
+            # 每次用 8 条样本同时计算，算出平均梯度。
             pbar.set_postfix({
                 'avg_loss': f"{avg_loss:.4f}",
                 'elapsed': f"{elapsed:.1f}s"
@@ -424,7 +479,8 @@ def train(model, train_loader, valid_data, epochs, device):
 
         train_l.append((epoch, avg_loss))
 
-        # 验证阶段（同样可以加上 tqdm，但这里保持简单）
+        # 验证阶段
+        # 每个 epoch 结束后，在开发集上做一次完整的抽取，计算精确率、召回率、F1，用来判断模型是否进步。
         f1, prec, rec = evaluate(valid_data, model, device)
         val_f1_r.append((epoch, f1))
         print(f"Epoch {epoch} done | f1: {f1:.4f}, precision: {prec:.4f}, recall: {rec:.4f}")
