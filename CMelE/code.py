@@ -74,6 +74,7 @@ for d in tqdm(train_data, desc="Filtering train samples"):
 print(f"Kept {len(train_data_new)} / {len(train_data)} train samples")
 
 # 读取 schema
+# 把 schema 文件里的“谓词”信息都读进来，建立几个映射字典，方便后面把每个谓词都转成数字 ID，以及查它的类型
 predicate2id = {}
 id2predicate = {}
 predicate2type = {}
@@ -95,11 +96,11 @@ class OurTokenizer(BertTokenizer):
         R = []
         for c in text:
             if c in self.vocab:
-                R.append(c)
+                R.append(c)  # 如果这个字在词表里，就当一个 token
             elif self._is_whitespace(c):
-                R.append('[unused1]')
+                R.append('[unused1]')  # 空白字符统一用 [unused1] 占位
             else:
-                R.append('[UNK]')
+                R.append('[UNK]')  # 词表里没有的字就打 [UNK]
         return R
 
     def _is_whitespace(self, char):
@@ -113,11 +114,7 @@ def preprocess_dataset(data):
     """预计算 token_ids, seg_ids, sub_ids, sub_labels, obj_labels"""
     records = []
     for d in tqdm(data, desc="Preprocessing"):
-        # 1) 在文本两端加上 [CLS] 和 [SEP]
-        # 2) 找到每个 subject 和 object 在 token_ids 中的起止位置
-        # 3) 构造 sub_labels（标记所有 subject 的起止）和 obj_labels（标记给定 subject 后对应 object 的起止）
-        # 4) 随机选一个 subject 作为训练目标
-        # 5) 对 token_ids、seg_ids、sub_labels、obj_labels 做截断或填充到 MAXLEN
+
         text = d['text']
         tokens = ["[CLS]"] + tokenizer.tokenize(text) + ["[SEP]"]
         token_ids = tokenizer.convert_tokens_to_ids(tokens)
@@ -174,17 +171,15 @@ def preprocess_dataset(data):
 
 
 """
-records：一个列表，里面每个元素都是一个五元组，分别对应：
+token_ids：一句话对应的 ID 序列
 
-    token_ids：输入到 BERT 的 ID 序列
+seg_ids：全 0 的句子分割标志
 
-    seg_ids：BERT 用的句子分割 ID（这里全 0）
+sub_ids：当前训练要定位的那个 subject 的起始和结束索引
 
-    sub_ids：本次训练要预测的那一对 subject 的起止位置
+sub_labels：所有主语起止的监督信号
 
-    sub_labels：一个矩阵，用来监督模型找到所有 subject 起止
-
-    obj_labels：一个四维张量，用来监督模型在给定 subject 后，找到对应 predicate-object 的起止
+obj_labels：在给定主语条件下，各关系下宾语起止的监督信号
 """
 
 # 辅助：在 list 中搜索子序列
