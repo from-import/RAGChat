@@ -20,3 +20,12 @@ python query.py --root ./ragtest --method local "Who is Bob Cratchit"
 ![030f2ec356f1094bd70cd570b04bfdcb](https://github.com/user-attachments/assets/a7350083-0ec2-4a4b-aff3-6b8008f494b9)
 
 
+2025.5.29 最新的改进后结果截图
+![3-1-1-系统整体架构概述](https://github.com/user-attachments/assets/79a319c7-c119-413e-b71e-749b5795445f)
+![4-1-训练中的参数变化](https://github.com/user-attachments/assets/f8d3d706-a3ba-4e5b-b122-323026389b1d)
+![4-2-3-知识图谱可视化-2](https://github.com/user-attachments/assets/0c2cd07c-f44c-4962-8bba-c4f78381330f)
+![4-2-3-知识图谱可视化-1](https://github.com/user-attachments/assets/f3b239b4-5606-43e8-8ab9-a02191889be6)
+![5-1-系统测试结果](https://github.com/user-attachments/assets/08e5cf84-3254-4163-9126-9c079fc66e2a)
+
+
+
